@@ -1,4 +1,8 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_theme.dart';
 
 /// ── Pembagi Detail Screen ──
@@ -116,9 +120,11 @@ class _PembagiDetailScreenState extends State<PembagiDetailScreen> {
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Center(
-              child: Text('Photo', style: TextStyle(
-                color: AppColors.textHint, fontSize: 11,
-              )),
+              child: Text('Photo',
+                  style: TextStyle(
+                    color: AppColors.textHint,
+                    fontSize: 11,
+                  )),
             ),
           ),
           const SizedBox(width: AppSpacing.md),
@@ -195,9 +201,17 @@ class _PembagiDetailScreenState extends State<PembagiDetailScreen> {
 
   Widget _buildActionButtons() {
     final actions = [
-      {'icon': Icons.restaurant_menu, 'label': 'Menu', 'color': AppColors.primary},
+      {
+        'icon': Icons.restaurant_menu,
+        'label': 'Menu',
+        'color': AppColors.primary
+      },
       {'icon': Icons.phone, 'label': 'Telpon', 'color': AppColors.info},
-      {'icon': Icons.chat_bubble_outline, 'label': 'Chat', 'color': AppColors.success},
+      {
+        'icon': Icons.chat_bubble_outline,
+        'label': 'Chat',
+        'color': AppColors.success
+      },
       {'icon': Icons.sms_outlined, 'label': 'SMS', 'color': AppColors.accent},
       {'icon': Icons.route, 'label': 'Rute', 'color': AppColors.error},
     ];
@@ -301,18 +315,15 @@ class _PembagiDetailScreenState extends State<PembagiDetailScreen> {
     final lat = lokasi['latitude'];
     final lng = lokasi['longitude'];
 
-    // TODO: Uncomment setelah install url_launcher
-    // final url = 'https://www.google.com/maps/dir/?api=1'
-    //     '&destination=$lat,$lng&travelmode=driving';
-    // launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-
-    _showSnack('Membuka rute ke $lat, $lng');
+    final url = 'https://www.google.com/maps/dir/?api=1'
+        '&destination=$lat,$lng&travelmode=driving';
+    launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 
   Widget _buildMap() {
     final lokasi = data['lokasi'] ?? data['lokasi_sekarang'];
-    final lat = lokasi?['latitude'] ?? -6.5971;
-    final lng = lokasi?['longitude'] ?? 106.8060;
+    final lat = (lokasi?['latitude'] ?? -6.5971).toDouble();
+    final lng = (lokasi?['longitude'] ?? 106.8060).toDouble();
     final brandName = data['branding_name'] ?? 'Pembagi';
 
     return Container(
@@ -324,77 +335,28 @@ class _PembagiDetailScreenState extends State<PembagiDetailScreen> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: Stack(
-          children: [
-            // TODO: Replace dengan GoogleMap widget setelah setup API key
-            //
-            // GoogleMap(
-            //   initialCameraPosition: CameraPosition(
-            //     target: LatLng(lat, lng),
-            //     zoom: 15,
-            //   ),
-            //   markers: {
-            //     Marker(
-            //       markerId: MarkerId('pembagi'),
-            //       position: LatLng(lat, lng),
-            //       infoWindow: InfoWindow(title: brandName),
-            //     ),
-            //   },
-            //   myLocationEnabled: true,
-            //   myLocationButtonEnabled: true,
-            //   zoomControlsEnabled: true,
-            // ),
-
-            // ── Placeholder Map (sebelum Google Maps API key di-setup) ──
-            Container(
-              color: const Color(0xFFE8F5E9),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.map_outlined,
-                        size: 64, color: Colors.green[300]),
-                    const SizedBox(height: AppSpacing.md),
-                    Text(
-                      'Google Maps',
-                      style: AppTextStyles.heading3.copyWith(
-                        color: Colors.green[700],
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        brandName,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      '📍 $lat, $lng',
-                      style: AppTextStyles.caption,
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Text(
-                      'Setup Google Maps API key\ndi AndroidManifest.xml & AppDelegate.swift',
-                      style: AppTextStyles.caption.copyWith(fontSize: 10),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
+        child: GoogleMap(
+          initialCameraPosition: CameraPosition(
+            target: LatLng(lat, lng),
+            zoom: 15,
+          ),
+          markers: {
+            Marker(
+              markerId: const MarkerId('pembagi'),
+              position: LatLng(lat, lng),
+              infoWindow: InfoWindow(title: brandName),
             ),
-          ],
+          },
+          myLocationEnabled: true,
+          myLocationButtonEnabled: true,
+          zoomControlsEnabled: true,
+          mapToolbarEnabled: true,
+          liteModeEnabled: false,
+          // Penting: supaya map bisa di-gesture di dalam ScrollView
+          gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+            Factory<OneSequenceGestureRecognizer>(
+                () => EagerGestureRecognizer()),
+          },
         ),
       ),
     );
@@ -413,23 +375,24 @@ class _PembagiDetailScreenState extends State<PembagiDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Katalog Harga', style: AppTextStyles.bodyMedium.copyWith(
-            fontWeight: FontWeight.w700,
-          )),
+          Text('Katalog Harga',
+              style: AppTextStyles.bodyMedium.copyWith(
+                fontWeight: FontWeight.w700,
+              )),
           const SizedBox(height: AppSpacing.sm),
           ...katalog.map((item) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(item['nama'] ?? '-', style: AppTextStyles.body),
-                Text('Rp ${item['harga'] ?? '-'}',
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: AppColors.primary,
-                    )),
-              ],
-            ),
-          )),
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(item['nama'] ?? '-', style: AppTextStyles.body),
+                    Text('Rp ${item['harga'] ?? '-'}',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.primary,
+                        )),
+                  ],
+                ),
+              )),
         ],
       ),
     );
@@ -448,14 +411,16 @@ class _PembagiDetailScreenState extends State<PembagiDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Jadwal', style: AppTextStyles.bodyMedium.copyWith(
-            fontWeight: FontWeight.w700,
-          )),
+          Text('Jadwal',
+              style: AppTextStyles.bodyMedium.copyWith(
+                fontWeight: FontWeight.w700,
+              )),
           const SizedBox(height: AppSpacing.sm),
-          _jadwalRow('Hari', '${avail['hari_dari'] ?? '-'} - ${avail['hari_sampai'] ?? '-'}'),
-          _jadwalRow('Jam', '${avail['jam_dari'] ?? '-'} - ${avail['jam_sampai'] ?? '-'}'),
-          if (avail['catatan'] != null)
-            _jadwalRow('Catatan', avail['catatan']),
+          _jadwalRow('Hari',
+              '${avail['hari_dari'] ?? '-'} - ${avail['hari_sampai'] ?? '-'}'),
+          _jadwalRow('Jam',
+              '${avail['jam_dari'] ?? '-'} - ${avail['jam_sampai'] ?? '-'}'),
+          if (avail['catatan'] != null) _jadwalRow('Catatan', avail['catatan']),
         ],
       ),
     );
@@ -469,9 +434,10 @@ class _PembagiDetailScreenState extends State<PembagiDetailScreen> {
         children: [
           SizedBox(
             width: 70,
-            child: Text(label, style: AppTextStyles.caption.copyWith(
-              fontWeight: FontWeight.w600,
-            )),
+            child: Text(label,
+                style: AppTextStyles.caption.copyWith(
+                  fontWeight: FontWeight.w600,
+                )),
           ),
           Expanded(child: Text(value, style: AppTextStyles.caption)),
         ],

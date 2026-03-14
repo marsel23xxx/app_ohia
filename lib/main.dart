@@ -8,6 +8,11 @@ import 'features/auth/presentation/screens/register_step2_screen.dart';
 import 'features/auth/presentation/screens/register_step3_screen.dart';
 import 'features/home/presentation/screens/home_screen.dart';
 import 'features/search/presentation/screens/pembagi_detail_screen.dart';
+import 'features/pembagi/presentation/screens/pembagi_setup_screen.dart';
+import 'features/chat/presentation/screens/conversations_screen.dart';
+import 'features/chat/presentation/screens/chat_room_screen.dart';
+import 'features/security/presentation/screens/emergency_screen.dart';
+import 'features/security/presentation/screens/find_my_device_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -75,6 +80,28 @@ class OhiaApp extends StatelessWidget {
               PembagiDetailScreen(pembagi: args),
               settings,
             );
+
+          case '/pembagi/setup':
+            return _buildRoute(const PembagiSetupScreen(), settings);
+
+          case '/chat':
+            return _buildRoute(const ConversationsScreen(), settings);
+
+          case '/chat/room':
+            final args = settings.arguments as Map<String, dynamic>? ?? {};
+            return _buildRoute(
+              ChatRoomScreen(
+                conversationId: args['conversation_id'] ?? 0,
+                otherUser: args['other_user'] ?? {},
+              ),
+              settings,
+            );
+
+          case '/emergency':
+            return _buildRoute(const EmergencyScreen(), settings);
+
+          case '/find-device':
+            return _buildRoute(const FindMyDeviceScreen(), settings);
 
           // ── Fallback ──
           default:

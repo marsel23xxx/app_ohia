@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../auth/data/auth_repository.dart';
 import '../widgets/diagonal_header.dart';
 
 /// ── Register Step 2: Kontak & OTP ──
@@ -35,6 +38,15 @@ class _RegisterStep2ScreenState extends State<RegisterStep2Screen> {
   // Countdown
   int _countdown = 0;
   Timer? _timer;
+
+  // API
+  late final AuthRepository _authRepo;
+
+  @override
+  void initState() {
+    super.initState();
+    _authRepo = AuthRepository(ApiClient.create());
+  }
 
   @override
   void dispose() {
@@ -72,16 +84,19 @@ class _RegisterStep2ScreenState extends State<RegisterStep2Screen> {
     setState(() => _isLoading = true);
 
     try {
-      // TODO: Call AuthRepository.register() lalu auto-send OTP
-      // final result = await authRepo.register(
-      //   ...widget.step1Data,
-      //   noHp: _noHpController.text,
-      //   email: _emailController.text,
-      //   password: _passwordController.text,
-      //   passwordConfirmation: _confirmPasswordController.text,
-      // );
-
-      await Future.delayed(const Duration(seconds: 2)); // Simulate API
+      // Call API register → otomatis kirim OTP via Zenziva
+      await _authRepo.register(
+        namaLengkap: widget.step1Data['nama_lengkap'] ?? '',
+        nik: widget.step1Data['nik'] ?? '',
+        noKk: widget.step1Data['no_kk'] ?? '',
+        kotaLahir: widget.step1Data['kota_lahir'] ?? '',
+        tanggalLahir: widget.step1Data['tanggal_lahir'] ?? '',
+        alamat: widget.step1Data['alamat'] ?? '',
+        noHp: _noHpController.text.trim(),
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+        passwordConfirmation: _confirmPasswordController.text,
+      );
 
       setState(() {
         _otpSent = true;
@@ -100,8 +115,45 @@ class _RegisterStep2ScreenState extends State<RegisterStep2Screen> {
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
+        String errorMsg = 'Terjadi kesalahan';
+        if (e is DioException && e.response?.data != null) {
+          final data = e.response!.data;
+          if (data is Map) {
+            errorMsg = data['message'] ?? errorMsg;
+            if (data['errors'] != null && data['errors'] is Map) {
+              final errors = data['errors'] as Map;
+              errorMsg =
+                  errors.values.expand((v) => v is List ? v : [v]).join('\n');
+            }
+          }
+        }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
+          SnackBar(content: Text(errorMsg), backgroundColor: AppColors.error),
+        );
+      }
+    }
+  }
+
+  Future<void> _resendOtp() async {
+    try {
+      await _authRepo.sendOtp(noHp: _noHpController.text.trim());
+      _startCountdown();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Kode OTP telah dikirim ulang'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        String errorMsg = 'Gagal mengirim ulang OTP';
+        if (e is DioException && e.response?.data is Map) {
+          errorMsg = e.response!.data['message'] ?? errorMsg;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(errorMsg), backgroundColor: AppColors.error),
         );
       }
     }
@@ -119,14 +171,17 @@ class _RegisterStep2ScreenState extends State<RegisterStep2Screen> {
     setState(() => _isLoading = true);
 
     try {
-      // TODO: Call AuthRepository.verifyOtp()
-      // final result = await authRepo.verifyOtp(
-      //   noHp: _noHpController.text,
-      //   otpCode: otp,
-      // );
-      // await ApiClient.saveToken(result['data']['token']);
+      // Call API verify OTP
+      final result = await _authRepo.verifyOtp(
+        noHp: _noHpController.text.trim(),
+        otpCode: otp,
+      );
 
-      await Future.delayed(const Duration(seconds: 2)); // Simulate API
+      // Simpan token dari response
+      final token = result['data']?['token'];
+      if (token != null) {
+        await ApiClient.saveToken(token);
+      }
 
       if (mounted) {
         // Navigate ke Step 3: Verifikasi Akhir
@@ -135,9 +190,13 @@ class _RegisterStep2ScreenState extends State<RegisterStep2Screen> {
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
+        String errorMsg = 'OTP salah atau kadaluarsa';
+        if (e is DioException && e.response?.data is Map) {
+          errorMsg = e.response!.data['message'] ?? errorMsg;
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('OTP salah atau kadaluarsa'),
+            content: Text(errorMsg),
             backgroundColor: AppColors.error,
           ),
         );
@@ -168,221 +227,231 @@ class _RegisterStep2ScreenState extends State<RegisterStep2Screen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-              // Step indicator
-              _buildStepIndicator(),
-              const SizedBox(height: AppSpacing.xl),
+                      // Step indicator
+                      _buildStepIndicator(),
+                      const SizedBox(height: AppSpacing.xl),
 
-              if (!_otpSent) ...[
-                // ── Form Kontak ──
-                _buildLabel('Nomor HP'),
-                const SizedBox(height: AppSpacing.sm),
-                TextFormField(
-                  controller: _noHpController,
-                  keyboardType: TextInputType.phone,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    hintText: '08xxxxxxxxxx',
-                    prefixIcon: Icon(Icons.phone_outlined),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'No HP wajib diisi';
-                    if (v.length < 10) return 'No HP tidak valid';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                _buildLabel('Email'),
-                const SizedBox(height: AppSpacing.sm),
-                TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    hintText: 'email@contoh.com',
-                    prefixIcon: Icon(Icons.email_outlined),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Email wajib diisi';
-                    if (!v.contains('@')) return 'Email tidak valid';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                _buildLabel('Password'),
-                const SizedBox(height: AppSpacing.sm),
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  decoration: InputDecoration(
-                    hintText: 'Minimal 8 karakter',
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscurePassword
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
-                    ),
-                  ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Password wajib diisi';
-                    if (v.length < 8) return 'Password minimal 8 karakter';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                _buildLabel('Konfirmasi Password'),
-                const SizedBox(height: AppSpacing.sm),
-                TextFormField(
-                  controller: _confirmPasswordController,
-                  obscureText: _obscureConfirm,
-                  decoration: InputDecoration(
-                    hintText: 'Ulangi password',
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscureConfirm
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined),
-                      onPressed: () =>
-                          setState(() => _obscureConfirm = !_obscureConfirm),
-                    ),
-                  ),
-                  validator: (v) {
-                    if (v != _passwordController.text)
-                      return 'Password tidak cocok';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: AppSpacing.xl),
-
-                // Kirim OTP button
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _sendOtp,
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+                      if (!_otpSent) ...[
+                        // ── Form Kontak ──
+                        _buildLabel('Nomor HP'),
+                        const SizedBox(height: AppSpacing.sm),
+                        TextFormField(
+                          controller: _noHpController,
+                          keyboardType: TextInputType.phone,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly
+                          ],
+                          decoration: const InputDecoration(
+                            hintText: '08xxxxxxxxxx',
+                            prefixIcon: Icon(Icons.phone_outlined),
                           ),
-                        )
-                      : const Text('Kirim OTP'),
-                ),
-              ] else ...[
-                // ── OTP Input Section ──
-                const Icon(Icons.sms_outlined, size: 64, color: AppColors.primary),
-                const SizedBox(height: AppSpacing.md),
-                Text(
-                  'Masukkan Kode OTP',
-                  style: AppTextStyles.heading3,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  'Kode OTP telah dikirim ke\n${_noHpController.text}',
-                  style: AppTextStyles.caption,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: AppSpacing.xl),
+                          validator: (v) {
+                            if (v == null || v.isEmpty)
+                              return 'No HP wajib diisi';
+                            if (v.length < 10) return 'No HP tidak valid';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.md),
 
-                // OTP Fields
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: List.generate(6, (i) {
-                    return SizedBox(
-                      width: 48,
-                      child: TextFormField(
-                        controller: _otpControllers[i],
-                        focusNode: _otpFocusNodes[i],
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        maxLength: 1,
-                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
+                        _buildLabel('Email'),
+                        const SizedBox(height: AppSpacing.sm),
+                        TextFormField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          decoration: const InputDecoration(
+                            hintText: 'email@contoh.com',
+                            prefixIcon: Icon(Icons.email_outlined),
+                          ),
+                          validator: (v) {
+                            if (v == null || v.isEmpty)
+                              return 'Email wajib diisi';
+                            if (!v.contains('@')) return 'Email tidak valid';
+                            return null;
+                          },
                         ),
-                        decoration: const InputDecoration(
-                          counterText: '',
-                          contentPadding: EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onChanged: (v) {
-                          if (v.isNotEmpty && i < 5) {
-                            _otpFocusNodes[i + 1].requestFocus();
-                          }
-                          if (v.isEmpty && i > 0) {
-                            _otpFocusNodes[i - 1].requestFocus();
-                          }
-                        },
-                      ),
-                    );
-                  }),
-                ),
-                const SizedBox(height: AppSpacing.md),
+                        const SizedBox(height: AppSpacing.md),
 
-                // Info auto-verify
-                Container(
-                  padding: const EdgeInsets.all(AppSpacing.md),
-                  decoration: BoxDecoration(
-                    color: AppColors.primaryLight,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.info_outline,
-                          color: AppColors.primaryDark, size: 20),
-                      const SizedBox(width: AppSpacing.sm),
-                      Expanded(
-                        child: Text(
-                          'OTP akan otomatis terverifikasi jika nomor HP yang dimasukkan sama dengan nomor yang Anda gunakan saat ini.',
-                          style: AppTextStyles.caption
-                              .copyWith(color: AppColors.primaryDark),
+                        _buildLabel('Password'),
+                        const SizedBox(height: AppSpacing.sm),
+                        TextFormField(
+                          controller: _passwordController,
+                          obscureText: _obscurePassword,
+                          decoration: InputDecoration(
+                            hintText: 'Minimal 8 karakter',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(_obscurePassword
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined),
+                              onPressed: () => setState(
+                                  () => _obscurePassword = !_obscurePassword),
+                            ),
+                          ),
+                          validator: (v) {
+                            if (v == null || v.isEmpty)
+                              return 'Password wajib diisi';
+                            if (v.length < 8)
+                              return 'Password minimal 8 karakter';
+                            return null;
+                          },
                         ),
-                      ),
+                        const SizedBox(height: AppSpacing.md),
+
+                        _buildLabel('Konfirmasi Password'),
+                        const SizedBox(height: AppSpacing.sm),
+                        TextFormField(
+                          controller: _confirmPasswordController,
+                          obscureText: _obscureConfirm,
+                          decoration: InputDecoration(
+                            hintText: 'Ulangi password',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(_obscureConfirm
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined),
+                              onPressed: () => setState(
+                                  () => _obscureConfirm = !_obscureConfirm),
+                            ),
+                          ),
+                          validator: (v) {
+                            if (v != _passwordController.text)
+                              return 'Password tidak cocok';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
+
+                        // Kirim OTP button
+                        ElevatedButton(
+                          onPressed: _isLoading ? null : _sendOtp,
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('Kirim OTP'),
+                        ),
+                      ] else ...[
+                        // ── OTP Input Section ──
+                        const Icon(Icons.sms_outlined,
+                            size: 64, color: AppColors.primary),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          'Masukkan Kode OTP',
+                          style: AppTextStyles.heading3,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          'Kode OTP telah dikirim ke\n${_noHpController.text}',
+                          style: AppTextStyles.caption,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
+
+                        // OTP Fields
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: List.generate(6, (i) {
+                            return SizedBox(
+                              width: 48,
+                              child: TextFormField(
+                                controller: _otpControllers[i],
+                                focusNode: _otpFocusNodes[i],
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                maxLength: 1,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly
+                                ],
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                decoration: const InputDecoration(
+                                  counterText: '',
+                                  contentPadding:
+                                      EdgeInsets.symmetric(vertical: 12),
+                                ),
+                                onChanged: (v) {
+                                  if (v.isNotEmpty && i < 5) {
+                                    _otpFocusNodes[i + 1].requestFocus();
+                                  }
+                                  if (v.isEmpty && i > 0) {
+                                    _otpFocusNodes[i - 1].requestFocus();
+                                  }
+                                },
+                              ),
+                            );
+                          }),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+
+                        // Info auto-verify
+                        Container(
+                          padding: const EdgeInsets.all(AppSpacing.md),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryLight,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.info_outline,
+                                  color: AppColors.primaryDark, size: 20),
+                              const SizedBox(width: AppSpacing.sm),
+                              Expanded(
+                                child: Text(
+                                  'OTP akan otomatis terverifikasi jika nomor HP yang dimasukkan sama dengan nomor yang Anda gunakan saat ini.',
+                                  style: AppTextStyles.caption
+                                      .copyWith(color: AppColors.primaryDark),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xl),
+
+                        // Verify button
+                        ElevatedButton(
+                          onPressed: _isLoading ? null : _verifyOtp,
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text('Verifikasi'),
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+
+                        // Resend OTP
+                        Center(
+                          child: _countdown > 0
+                              ? Text(
+                                  'Kirim ulang OTP dalam ${_countdown}s',
+                                  style: AppTextStyles.caption,
+                                )
+                              : GestureDetector(
+                                  onTap: _resendOtp,
+                                  child: Text(
+                                    'Kirim Ulang OTP',
+                                    style: AppTextStyles.bodyMedium
+                                        .copyWith(color: AppColors.primary),
+                                  ),
+                                ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                const SizedBox(height: AppSpacing.xl),
-
-                // Verify button
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _verifyOtp,
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Verifikasi'),
-                ),
-                const SizedBox(height: AppSpacing.md),
-
-                // Resend OTP
-                Center(
-                  child: _countdown > 0
-                      ? Text(
-                          'Kirim ulang OTP dalam ${_countdown}s',
-                          style: AppTextStyles.caption,
-                        )
-                      : GestureDetector(
-                          onTap: _sendOtp,
-                          child: Text(
-                            'Kirim Ulang OTP',
-                            style: AppTextStyles.bodyMedium
-                                .copyWith(color: AppColors.primary),
-                          ),
-                        ),
-                ),
-              ],
-            ],
-          ),
-        ),
               ),
             ),
           ],
